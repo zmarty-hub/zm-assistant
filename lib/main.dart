@@ -1,12 +1,11 @@
 import 'dart:convert';
-import 'dart:async';
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-void main() => runApp(const MyApp());
+void main() {
+  runApp(const MyApp());
+}
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
@@ -14,10 +13,13 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      debugShowCheckedModeBanner: false,
       title: 'Ollama Chat',
-      theme: ThemeData(primarySwatch: Colors.deepPurple),
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        useMaterial3: true,
+      ),
       home: const ChatScreen(),
+      debugShowCheckedModeBanner: false,
     );
   }
 }
@@ -31,178 +33,213 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _controller = TextEditingController();
-  final List<Map<String, String>> _messages = [];
+  final ScrollController _scrollController = ScrollController();
+  List<Map<String, String>> _messages = [];
   bool _isLoading = false;
-  String? _profileImagePath;
 
-  // URL Ollama (Ganti IP dengan IP Lokal Laptop Anda)
+  // Sesuaikan IP laptop Anda di sini
   final String _localUrl = "http://192.168.1.27:11434/api/chat";
-  final String _publicUrl = "https://ollama.zarai.my.id/api/chat";
   final String _modelName = "gemma4-chatollama";
 
   @override
   void initState() {
     super.initState();
-    _loadProfileImage();
+    _loadHistory();
   }
 
-  // Fungsi memuat foto profil dari memori saat aplikasi dibuka
-  Future<void> _loadProfileImage() async {
+  // Memuat riwayat chat dari SharedPreferences agar tersimpan permanen
+  Future<void> _loadHistory() async {
     final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _profileImagePath = prefs.getString('profile_image_path');
-    });
-  }
-
-  // Fungsi membuka galeri dan menyimpan foto profil baru
-  Future<void> _pickImage() async {
-    final ImagePicker picker = ImagePicker();
-    final XFile? image = await picker.pickImage(source: ImageSource.gallery);
-
-    if (image != null) {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('profile_image_path', image.path);
+    final String? historyString = prefs.getString('chat_history');
+    if (historyString != null) {
+      final List<dynamic> decoded = jsonDecode(historyString);
       setState(() {
-        _profileImagePath = image.path;
+        _messages = decoded.map((item) => Map<String, String>.from(item)).toList();
       });
     }
   }
 
-  Future<void> _sendMessage() async {
-    if (_controller.text.trim().isEmpty) return;
+  // Menyimpan riwayat chat secara otomatis
+  Future<void> _saveHistory() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('chat_history', jsonEncode(_messages));
+  }
 
-    final userText = _controller.text;
-    _controller.clear();
-
+  // Menghapus riwayat chat
+  Future<void> _clearHistory() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('chat_history');
     setState(() {
-      _messages.add({"role": "user", "content": userText});
+      _messages.clear();
+    });
+  }
+
+  Future<void> _sendMessage() async {
+    final text = _controller.text.trim();
+    if (text.isEmpty) return;
+
+    _controller.clear();
+    setState(() {
+      _messages.add({"role": "user", "content": text});
       _isLoading = true;
     });
-
-    final payload = jsonEncode({
-      "model": _modelName,
-      "messages": _messages,
-      "stream": false,
-    });
+    _saveHistory();
+    _scrollToBottom();
 
     try {
-      http.Response response;
-      try {
-        response = await http.post(
-          Uri.parse(_localUrl),
-          headers: {"Content-Type": "application/json"},
-          body: payload,
-        ).timeout(const Duration(seconds: 3));
-      } catch (e) {
-        response = await http.post(
-          Uri.parse(_publicUrl),
-          headers: {"Content-Type": "application/json"},
-          body: payload,
-        );
-      }
+      final response = await http.post(
+        Uri.parse(_localUrl),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({
+          "model": _modelName,
+          "messages": _messages,
+          "stream": false,
+        }),
+      );
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        final botReply = data['message']['content'];
-
+        final botReply = data['message']['content'] ?? "Tidak ada respons.";
         setState(() {
           _messages.add({"role": "assistant", "content": botReply});
         });
       } else {
         setState(() {
-          _messages.add({
-            "role": "assistant",
-            "content": "Error: Gagal terhubung ke server (${response.statusCode})"
-          });
+          _messages.add({"role": "assistant", "content": "Error server: ${response.statusCode}"});
         });
       }
     } catch (e) {
       setState(() {
-        _messages.add({
-          "role": "assistant",
-          "content": "Error koneksi total. Pastikan laptop menyala dan Ollama aktif."
-        });
+        _messages.add({"role": "assistant", "content": "Gagal terhubung ke Ollama. Periksa kembali IP dan jaringan."});
       });
     } finally {
       setState(() {
         _isLoading = false;
       });
+      _saveHistory();
+      _scrollToBottom();
     }
+  }
+
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Row(
-          children: [
-            GestureDetector(
-              onTap: _pickImage, // Jika ditekan, akan membuka galeri HP
-              child: CircleAvatar(
-                radius: 18,
-                backgroundColor: Colors.grey[300],
-                backgroundImage: _profileImagePath != null
-                    ? FileImage(File(_profileImagePath!))
-                    : null,
-                child: _profileImagePath == null
-                    ? const Icon(Icons.person, color: Colors.grey)
-                    : null,
-              ),
-            ),
-            const SizedBox(width: 10),
-            const Text('Asisten AI Lokal'),
-          ],
-        ),
+        title: const Text('Ollama AI Chat'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.delete_outline),
+            tooltip: 'Hapus Riwayat Chat',
+            onPressed: () {
+              showDialog(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text('Hapus Riwayat'),
+                  content: const Text('Apakah Anda yakin ingin menghapus semua riwayat chat?'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Batal'),
+                    ),
+                    TextButton(
+                      onPressed: () {
+                        _clearHistory();
+                        Navigator.pop(context);
+                      },
+                      child: const Text('Hapus', style: TextStyle(color: Colors.red)),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ],
       ),
       body: Column(
         children: [
           Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.all(8.0),
-              itemCount: _messages.length,
-              itemBuilder: (context, index) {
-                final msg = _messages[index];
-                final isUser = msg['role'] == 'user';
-                return Align(
-                  alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-                  child: Container(
-                    margin: const EdgeInsets.symmetric(vertical: 4),
-                    padding: const EdgeInsets.all(12),
-                    constraints: BoxConstraints(
-                        maxWidth: MediaQuery.of(context).size.width * 0.75),
-                    decoration: BoxDecoration(
-                      color: isUser ? Colors.deepPurple[100] : Colors.grey[200],
-                      borderRadius: BorderRadius.circular(12),
+            child: _messages.isEmpty
+                ? const Center(
+                    child: Text(
+                      'Belum ada percakapan.\nMulai kirim pesan ke Ollama!',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.grey),
                     ),
-                    child: Text(msg['content'] ?? ''),
+                  )
+                : ListView.builder(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.all(12),
+                    itemCount: _messages.length,
+                    itemBuilder: (context, index) {
+                      final msg = _messages[index];
+                      final isUser = msg['role'] == 'user';
+                      return Align(
+                        alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+                        child: Container(
+                          margin: const EdgeInsets.symmetric(vertical: 4),
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
+                          decoration: BoxDecoration(
+                            color: isUser ? Colors.deepPurple : Colors.grey.shade200,
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Text(
+                            msg['content'] ?? '',
+                            style: TextStyle(
+                              color: isUser ? Colors.white : Colors.black87,
+                              fontSize: 16,
+                            ),
+                          ),
+                        ),
+                      );
+                    },
                   ),
-                );
-              },
-            ),
           ),
           if (_isLoading)
             const Padding(
               padding: EdgeInsets.all(8.0),
-              child: CircularProgressIndicator(),
+              child: LinearProgressIndicator(),
             ),
-          Padding(
-            padding: const EdgeInsets.all(8.0),
+          Container(
+            padding: const EdgeInsets.all(8),
+            color: Colors.white,
             child: Row(
               children: [
                 Expanded(
                   child: TextField(
                     controller: _controller,
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       hintText: 'Ketik pesan...',
-                      border: OutlineInputBorder(),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(24),
+                        borderSide: BorderSide.none,
+                      ),
+                      filled: true,
+                      fillColor: Colors.grey.shade100,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                     ),
                     onSubmitted: (_) => _sendMessage(),
                   ),
                 ),
                 const SizedBox(width: 8),
-                IconButton(
-                  icon: const Icon(Icons.send, color: Colors.deepPurple),
-                  onPressed: _sendMessage,
+                CircleAvatar(
+                  backgroundColor: Colors.deepPurple,
+                  child: IconButton(
+                    icon: const Icon(Icons.send, color: Colors.white, size: 18),
+                    onPressed: _sendMessage,
+                  ),
                 ),
               ],
             ),
