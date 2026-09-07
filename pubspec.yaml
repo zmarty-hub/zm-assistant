@@ -10,6 +10,8 @@ dependencies:
   flutter:
     sdk: flutter
   http: ^1.2.0
+  image_picker: ^1.1.2 # Untuk membuka galeri foto
+  shared_preferences: ^2.3.2 # Untuk menyimpan data foto yang dipilih
 
 dev_dependencies:
   flutter_test:
@@ -18,5 +20,3 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-  assets:
-    - assets/profile.png
