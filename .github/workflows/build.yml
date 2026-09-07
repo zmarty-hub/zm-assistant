@@ -24,14 +24,23 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Install Dependencies
-        run: flutter pub get
-
-      - name: Build APK
-        run: flutter build apk --release
+      - name: Generate Flutter Project & Build
+        run: |
+          # 1. Buat kerangka proyek flutter baru bernama "my_app" khusus untuk Android
+          flutter create my_app --platforms android
+          
+          # 2. Timpa file bawaan dengan kode main.dart dan pubspec.yaml milik kita
+          cp pubspec.yaml my_app/
+          cp -r lib/ my_app/
+          
+          # 3. Masuk ke folder aplikasi, ambil dependensi, lalu rakit APK
+          cd my_app
+          flutter pub get
+          flutter build apk --release
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: app-release
-          path: build/app/outputs/flutter-apk/app-release.apk
+          # Ambil file APK dari dalam folder my_app yang baru saja dibuat
+          path: my_app/build/app/outputs/flutter-apk/app-release.apk
