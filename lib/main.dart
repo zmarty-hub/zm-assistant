@@ -1,7 +1,10 @@
 import 'dart:convert';
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() => runApp(const MyApp());
 
@@ -30,15 +33,40 @@ class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _controller = TextEditingController();
   final List<Map<String, String>> _messages = [];
   bool _isLoading = false;
+  String? _profileImagePath;
 
-  // 1. IP Lokal (WiFi) - Ganti dengan IPv4 laptop Anda (contoh: 192.168.1.15)
+  // URL Ollama (Ganti IP dengan IP Lokal Laptop Anda)
   final String _localUrl = "http://192.168.1.27:11434/api/chat";
-  
-  // 2. URL Internet - Ganti dengan domain Cloudflare Anda
   final String _publicUrl = "https://ollama.zarai.my.id/api/chat";
-  
-  // 3. Nama model Ollama yang sudah dibuat
   final String _modelName = "gemma4-chatollama";
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProfileImage();
+  }
+
+  // Fungsi memuat foto profil dari memori saat aplikasi dibuka
+  Future<void> _loadProfileImage() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _profileImagePath = prefs.getString('profile_image_path');
+    });
+  }
+
+  // Fungsi membuka galeri dan menyimpan foto profil baru
+  Future<void> _pickImage() async {
+    final ImagePicker picker = ImagePicker();
+    final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+
+    if (image != null) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('profile_image_path', image.path);
+      setState(() {
+        _profileImagePath = image.path;
+      });
+    }
+  }
 
   Future<void> _sendMessage() async {
     if (_controller.text.trim().isEmpty) return;
@@ -60,14 +88,12 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       http.Response response;
       try {
-        // Percobaan 1: Jaringan WiFi lokal (Batas waktu 3 detik)
         response = await http.post(
           Uri.parse(_localUrl),
           headers: {"Content-Type": "application/json"},
           body: payload,
         ).timeout(const Duration(seconds: 3));
       } catch (e) {
-        // Percobaan 2: Fallback ke jaringan internet umum jika WiFi lokal gagal
         response = await http.post(
           Uri.parse(_publicUrl),
           headers: {"Content-Type": "application/json"},
@@ -110,9 +136,18 @@ class _ChatScreenState extends State<ChatScreen> {
       appBar: AppBar(
         title: Row(
           children: [
-            const CircleAvatar(
-              radius: 18,
-              backgroundImage: AssetImage('assets/profile.png'), 
+            GestureDetector(
+              onTap: _pickImage, // Jika ditekan, akan membuka galeri HP
+              child: CircleAvatar(
+                radius: 18,
+                backgroundColor: Colors.grey[300],
+                backgroundImage: _profileImagePath != null
+                    ? FileImage(File(_profileImagePath!))
+                    : null,
+                child: _profileImagePath == null
+                    ? const Icon(Icons.person, color: Colors.grey)
+                    : null,
+              ),
             ),
             const SizedBox(width: 10),
             const Text('Asisten AI Lokal'),
