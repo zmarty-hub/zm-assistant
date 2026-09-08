@@ -76,10 +76,16 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _saveIpAddress(String newIp) async {
+    final cleanedIp = newIp
+        .replaceAll('http://', '')
+        .replaceAll('https://', '')
+        .replaceAll('/', '')
+        .trim();
+
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('ollama_ip', newIp);
+    await prefs.setString('ollama_ip', cleanedIp);
     setState(() {
-      _ipAddress = newIp;
+      _ipAddress = cleanedIp;
     });
   }
 
@@ -167,21 +173,27 @@ class _ChatScreenState extends State<ChatScreen> {
               onPressed: () => Navigator.pop(context),
               child: const Text('Batal'),
             ),
-            OutlinedButton.icon(
-              onPressed: isTesting ? null : () async {
-                final ip = ipController.text.trim();
-                if (ip.isEmpty) return;
+           OutlinedButton.icon(
+      onPressed: isTesting ? null : () async {
+        final rawIp = ipController.text.trim();
+        final ip = rawIp
+            .replaceAll('http://', '')
+            .replaceAll('https://', '')
+            .replaceAll('/', '')
+            .trim();
+            
+        if (ip.isEmpty) return;
 
-                setDialogState(() {
-                  isTesting = true;
-                  testStatus = "Menghubungkan ke $ip...";
-                  statusColor = Colors.blue;
-                });
+        setDialogState(() {
+          isTesting = true;
+          testStatus = "Menghubungkan ke $ip...";
+          statusColor = Colors.blue;
+        });
 
-                try {
-                  final response = await http.get(
-                    Uri.parse('http://$ip:11434/api/tags'),
-                  ).timeout(const Duration(seconds: 4));
+        try {
+          final response = await http.get(
+            Uri.parse('http://$ip:11434/api/tags'),
+          ).timeout(const Duration(seconds: 4));
 
                   if (response.statusCode == 200) {
                     setDialogState(() {
