@@ -272,7 +272,7 @@ class _ChatScreenState extends State<ChatScreen> {
       setState(() {
         _messages.add({
           "role": "assistant", 
-          "content": "Gagal terhubung ke $url. Pastikan IP benar, satu jaringan Wi-Fi, dan Ollama aktif."
+          "content": "Sistem Error: $e" // <--- Ini akan mencetak alasan pasti kenapa koneksi ditolak
         });
       });
     } finally {
